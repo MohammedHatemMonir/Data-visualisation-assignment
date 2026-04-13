@@ -15,31 +15,93 @@ temp_rolling_1h:	The average temperature of the last hour (4 readings) to smooth
 
 
 
-FEATURE DOCUMENTATION & CALCULATIONS
+FEATURE DOCUMENTATION, CALCULATIONS, AND SCALES
 
 hour:               Hour of the day (0–23). 
-                    Logic: Extracted from the 'time' ISO-8601 timestamp.
+                    Calculation: Extracted from ISO-8601 'time' string.
+                    Scale: 0 = Midnight; 12 = Noon; 23 = 11 PM. Higher values represent 
+                    later in the day.
 
 day_of_week:        The specific day name (e.g., Monday). 
-                    Logic: Extracted from the 'time' ISO-8601 timestamp.
+                    Calculation: Extracted from ISO-8601 'time' string.
+                    Scale: N/A (Categorical). Used to compare weekdays vs. weekends.
 
 is_night:           Binary indicator (1 or 0). 
-                    Logic: 1 if hour is >= 20 (8 PM) or <= 6 (6 AM); otherwise 0.
+                    Calculation: 1 if hour >= 20 (8 PM) or <= 6 (6 AM); otherwise 0.
+                    Scale: 1 = Nighttime (Cooling phase); 0 = Daytime (Heating phase).
 
 latitude:           North/South geographic coordinate. 
-                    Logic: The first numerical value parsed from the 'device_location' string.
+                    Calculation: First float parsed from 'device_location'.
+                    Scale: In this dataset (Geelong/Portarlington), "Higher" (closer to 0) 
+                    is North; "Lower" (more negative) is South.
 
 longitude:          East/West geographic coordinate. 
-                    Logic: The second numerical value parsed from the 'device_location' string.
+                    Calculation: Second float parsed from 'device_location'.
+                    Scale: Higher values are East (towards the ocean); Lower values 
+                    are West (inland).
 
-dew_point:          The temperature ($T_{dp}$) where condensation occurs. 
-                    Logic: Calculated using the Magnus-Tetens approximation: 
-                    $T_{dp} = \frac{c \gamma}{b - \gamma}$ where $\gamma = \ln(\frac{RH}{100}) + \frac{bT}{c+T}$
+dew_point:          The temperature where air becomes 100% saturated (moist).
+                    Calculation: Tdp = (c * gamma) / (b - gamma) [Magnus-Tetens].
+                    Scale: <10°C = Dry/Crisp; 16-20°C = Humid/Muggy; >24°C = Oppressive. 
+                    Higher = More moisture in the air.
 
-humidex:            The "Feels Like" index combining temperature and humidity. 
-                    Logic: $T + 0.5555 \times (e - 10)$, where $e$ is vapor pressure 
-                    derived from the dew point.
+humidex:            The "Feels Like" index (Heat + Humidity).
+                    Calculation: T + 0.5555 * (Vapor Pressure - 10).
+                    Scale: <29 = Comfortable; 30-39 = Some discomfort; 40-45 = Great 
+                    discomfort; >45 = Dangerous (Heat stroke risk). 
+                    Higher = More physical heat stress.
 
-temp_rolling_1h:    1-hour Simple Moving Average (SMA). 
-                    Logic: The average of the 4 most recent temperature readings 
-                    (since period = 900s), grouped by 'device_id'.
+temp_rolling_1h:    1-hour Simple Moving Average (SMA) of temperature.
+                    Calculation: Mean of the last 4 readings per device_id.
+                    Scale: Higher = Sustained heat; Lower = Sustained cool. 
+                    Used to filter out temporary sensor spikes/glitches.
+
+
+
+
+
+
+
+Old columns:
+
+SOURCE DATA DOCUMENTATION
+
+time:               ISO-8601 Timestamp (UTC).
+                    Format: YYYY-MM-DDTHH:MM:SS+00:00.
+                    Interpretation: The exact moment the sensor took the reading. 
+                    Important for aligning weather events across different locations.
+
+device_name:        Human-readable location label.
+                    Logic: Usually the street name or suburb (e.g., "Tower Road").
+                    Scale: N/A. Useful for mapping and user-facing displays.
+
+device_id:          Unique hardware identifier.
+                    Logic: A string like "risinghf-d93". 
+                    Scale: N/A. Essential for grouping data to ensure you are 
+                    tracking the same physical sensor over time.
+
+temperature_merged: Air temperature in Celsius (°C).
+                    Logic: Raw sensor reading.
+                    Scale: Higher = Hotter. In this region, expect 5°C to 40°C. 
+                    Used as the primary input for Humidex and Dew Point.
+
+humidity_merged:    Relative Humidity (%).
+                    Logic: The amount of water vapor present relative to the 
+                    maximum possible at that temperature.
+                    Scale: 0% = Bone dry; 100% = Saturated (fog/rain likely). 
+                    Higher = More "damp" feel.
+
+battery:            Sensor battery voltage/level.
+                    Logic: Integer value (e.g., 2 or 3).
+                    Scale: Higher = More charge. Use this to monitor sensor health; 
+                    a drop to 1 often indicates a sensor is about to go offline.
+
+period:             Reporting frequency.
+                    Logic: String value (e.g., "900 sec").
+                    Scale: Constant. 900 seconds = 15 minutes. This confirms the 
+                    data is high-resolution enough for "Real-Time" tracking.
+
+device_location:    GPS Coordinates (String).
+                    Format: "Latitude, Longitude".
+                    Scale: Raw text. Must be parsed into floats for any 
+                    mapping or distance-based calculations.
