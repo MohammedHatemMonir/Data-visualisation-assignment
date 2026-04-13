@@ -10,3 +10,36 @@ longitude:	        The East/West coordinate for mapping and spatial analysis.
 dew_point:	        The temperature where air becomes 100% saturated; used as a stable moisture measure.
 humidex:	        The "Feels Like" temperature; combines heat and humidity into a human comfort index.
 temp_rolling_1h:	The average temperature of the last hour (4 readings) to smooth out sensor noise.
+
+
+
+
+
+FEATURE DOCUMENTATION & CALCULATIONS
+
+hour:               Hour of the day (0–23). 
+                    Logic: Extracted from the 'time' ISO-8601 timestamp.
+
+day_of_week:        The specific day name (e.g., Monday). 
+                    Logic: Extracted from the 'time' ISO-8601 timestamp.
+
+is_night:           Binary indicator (1 or 0). 
+                    Logic: 1 if hour is >= 20 (8 PM) or <= 6 (6 AM); otherwise 0.
+
+latitude:           North/South geographic coordinate. 
+                    Logic: The first numerical value parsed from the 'device_location' string.
+
+longitude:          East/West geographic coordinate. 
+                    Logic: The second numerical value parsed from the 'device_location' string.
+
+dew_point:          The temperature ($T_{dp}$) where condensation occurs. 
+                    Logic: Calculated using the Magnus-Tetens approximation: 
+                    $T_{dp} = \frac{c \gamma}{b - \gamma}$ where $\gamma = \ln(\frac{RH}{100}) + \frac{bT}{c+T}$
+
+humidex:            The "Feels Like" index combining temperature and humidity. 
+                    Logic: $T + 0.5555 \times (e - 10)$, where $e$ is vapor pressure 
+                    derived from the dew point.
+
+temp_rolling_1h:    1-hour Simple Moving Average (SMA). 
+                    Logic: The average of the 4 most recent temperature readings 
+                    (since period = 900s), grouped by 'device_id'.
