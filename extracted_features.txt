@@ -1,0 +1,12 @@
+New columns:
+
+hour,day_of_week,is_night,latitude,longitude,dew_point,humidex,temp_rolling_1h
+
+hour:	            Hour of the day (0–23) extracted from the timestamp.
+day_of_week:        The specific day (e.g., Monday, Friday) for identifying weekly patterns.
+is_night:	        Binary flag: 1 for night (8 PM–6 AM) and 0 for day.
+latitude:	        The North/South coordinate for mapping and spatial analysis.
+longitude:	        The East/West coordinate for mapping and spatial analysis.
+dew_point:	        The temperature where air becomes 100% saturated; used as a stable moisture measure.
+humidex:	        The "Feels Like" temperature; combines heat and humidity into a human comfort index.
+temp_rolling_1h:	The average temperature of the last hour (4 readings) to smooth out sensor noise.
