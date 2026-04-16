@@ -36,7 +36,9 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 from scipy import stats
-import requests
+import openmeteo_requests
+import requests_cache
+from retry_requests import retry
 
 # Reproducibility
 RANDOM_STATE = 42
@@ -177,34 +179,50 @@ LAT, LON = -38.29, 144.39   # centroid of device locations in Victoria
 start_date = df["time"].dt.date.min().isoformat()
 end_date   = df["time"].dt.date.max().isoformat()
 
-api_url = (
-    f"https://archive.open-meteo.com/v1/archive"
-    f"?latitude={LAT}&longitude={LON}"
-    f"&start_date={start_date}&end_date={end_date}"
-    f"&daily=apparent_temperature_max,apparent_temperature_min,"
-    f"windspeed_10m_max,precipitation_sum"
-    f"&timezone=Australia%2FMelbourne"
-)
-
 try:
-    resp = requests.get(api_url, timeout=20)
-    resp.raise_for_status()
-    meta = resp.json()["daily"]
+    # Setup Open-Meteo API client with cache and retry on errors.
+    cache_session = requests_cache.CachedSession(".cache", expire_after=3600)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    openmeteo = openmeteo_requests.Client(session=retry_session)
+
+    # Use archive endpoint to align with historical date range in the dataset.
+    url = "https://archive-api.open-meteo.com/v1/archive"
+    params = {
+        "latitude": [LAT],
+        "longitude": [LON],
+        "start_date": start_date,
+        "end_date": end_date,
+        "daily": [
+            "apparent_temperature_max",
+            "apparent_temperature_min",
+            "windspeed_10m_max",
+            "precipitation_sum",
+        ],
+        "timezone": "Australia/Melbourne",
+    }
+    responses = openmeteo.weather_api(url, params=params)
+    response = responses[0]
+
+    daily = response.Daily()
     ext_df = pd.DataFrame({
-        "date":              meta["time"],
-        "apparent_temp_max": meta["apparent_temperature_max"],
-        "apparent_temp_min": meta["apparent_temperature_min"],
-        "wind_speed_max":    meta["windspeed_10m_max"],
-        "precipitation":     meta["precipitation_sum"],
+        "date": pd.date_range(
+            start=pd.to_datetime(daily.Time(), unit="s", utc=True),
+            end=pd.to_datetime(daily.TimeEnd(), unit="s", utc=True),
+            freq=pd.Timedelta(seconds=daily.Interval()),
+            inclusive="left",
+        ).date,
+        "apparent_temp_max": daily.Variables(0).ValuesAsNumpy(),
+        "apparent_temp_min": daily.Variables(1).ValuesAsNumpy(),
+        "wind_speed_max": daily.Variables(2).ValuesAsNumpy(),
+        "precipitation": daily.Variables(3).ValuesAsNumpy(),
     })
-    ext_df["date"] = pd.to_datetime(ext_df["date"]).dt.date
 
     df["date"] = df["time"].dt.date
     df = df.merge(ext_df, on="date", how="left")
-    df[["apparent_temp_max","apparent_temp_min",
-        "wind_speed_max","precipitation"]] = (
-        df[["apparent_temp_max","apparent_temp_min",
-            "wind_speed_max","precipitation"]]
+    df[["apparent_temp_max", "apparent_temp_min",
+        "wind_speed_max", "precipitation"]] = (
+        df[["apparent_temp_max", "apparent_temp_min",
+            "wind_speed_max", "precipitation"]]
         .ffill().bfill()
     )
     EXTERNAL_OK = True
