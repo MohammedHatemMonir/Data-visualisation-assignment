@@ -45,6 +45,10 @@ RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
 plt.rcParams.update({"figure.dpi": 120, "font.size": 11})
 
+# Representative location for the Victoria dataset and Open-Meteo integration.
+VICTORIA_LATITUDE = -38.29
+VICTORIA_LONGITUDE = 144.39
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 1: DATA LOADING & INSPECTION
@@ -98,6 +102,9 @@ JUSTIFICATION:
      at night → cool temperatures; non-linearity expected). Hour-of-day
      as sin/cos pairs encode the cyclic structure without introducing
      a spurious ordinal relationship (hour 23 ≠ 23* hour 1).
+     Dew point and humidex are derived from temperature and humidity to
+     capture moisture and human comfort information. A 1-hour rolling
+     temperature average is computed per device to smooth sensor noise.
 """
 
 print("\n" + "=" * 65)
@@ -113,6 +120,12 @@ df["day_of_week"]= df["time"].dt.dayofweek   # 0 = Monday
 # Cyclical encoding for hour (preserves circularity)
 df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
 df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
+
+# Use the representative longitude as a spatial reference for the dataset.
+df["longitude"] = VICTORIA_LONGITUDE
+
+# Sort by device and time so per-device rolling features are computed correctly.
+df = df.sort_values(["device_id", "time"]).reset_index(drop=True)
 
 print("Timestamps parsed; cyclical hour features created.")
 
@@ -142,7 +155,24 @@ print(f"Capped {n_outliers} temperature outliers at {upper_fence:.2f} degC (IQR 
 df["humidity_sq"]   = df["humidity_merged"] ** 2
 df["temp_humidity"] = df["temperature_merged"] * df["humidity_merged"]  # interaction
 
-print("Engineered features: humidity_sq, temp_humidity interaction.")
+# Dew point uses temperature and relative humidity to derive saturation.
+rh = np.clip(df["humidity_merged"] / 100.0, 1e-6, 1.0)
+alpha = (17.27 * df["temperature_merged"] / (237.7 + df["temperature_merged"])) + np.log(rh)
+df["dew_point"] = (237.7 * alpha) / (17.27 - alpha)
+
+# Humidex is a human comfort index derived from temperature and dew point.
+es = 6.11 * np.exp(5417.7530 * (1/273.16 - 1/(df["dew_point"] + 273.15)))
+df["humidex"] = df["temperature_merged"] + 0.5555 * (es - 10)
+
+# Smooth temperature noise with a per-device 1-hour rolling average.
+df["temp_rolling_1h"] = (
+    df.groupby("device_id")["temperature_merged"]
+      .rolling(4, min_periods=1)
+      .mean()
+      .reset_index(level=0, drop=True)
+)
+
+print("Engineered features: humidity_sq, temp_humidity, dew_point, humidex, temp_rolling_1h.")
 
 # --- 2e. Encode device_id as integer category ---------------------------
 df["device_code"] = pd.Categorical(df["device_id"]).codes
@@ -175,7 +205,7 @@ print("\n" + "=" * 65)
 print("STEP 3: HETEROGENEOUS DATA INTEGRATION (Open-Meteo API)")
 print("=" * 65)
 
-LAT, LON = -38.29, 144.39   # centroid of device locations in Victoria
+LAT, LON = VICTORIA_LATITUDE, VICTORIA_LONGITUDE   # centroid of device locations in Victoria
 start_date = df["time"].dt.date.min().isoformat()
 end_date   = df["time"].dt.date.max().isoformat()
 
@@ -291,6 +321,7 @@ ax4.set_xticks(range(24))
 # 4e. Correlation heatmap
 ax5 = fig.add_subplot(gs[1, 2])
 corr_cols = ["temperature_merged","humidity_merged","humidity_sq",
+             "dew_point","humidex","temp_rolling_1h",
              "hour_sin","hour_cos","month","device_code"]
 if EXTERNAL_OK:
     corr_cols += ["apparent_temp_max","wind_speed_max","precipitation"]
@@ -330,6 +361,9 @@ JUSTIFICATION:
   FEATURES CHOSEN:
     humidity_merged   — primary predictor (strong negative correlation expected)
     humidity_sq       — captures non-linearity (humidity-temperature curve)
+    dew_point         — stable moisture indicator derived from humidity.
+    humidex           — human comfort index combining temperature and humidity.
+    temp_rolling_1h   — last-hour smoothed temperature to reduce sensor noise.
     hour_sin/cos      — captures diurnal temperature cycle
     month             — captures seasonal variation
     device_code       — captures per-device calibration offset
@@ -337,7 +371,8 @@ JUSTIFICATION:
       — macroscale atmospheric context from external source
 
   EXCLUDED: battery (unrelated to temperature physics), raw hour (replaced
-    by cyclical encoding), temp_humidity (used only for EDA).
+    by cyclical encoding), temp_humidity (used only for EDA), longitude
+    (representative spatial reference, not predictive when constant).
 
   SPLIT STRATEGY: 80 % train / 20 % test, stratified by month to ensure
     each month is proportionally represented in both sets. This is important
@@ -355,7 +390,8 @@ print("\n" + "=" * 65)
 print("STEP 5: FEATURE MATRIX & TRAIN/TEST SPLIT")
 print("=" * 65)
 
-FEATURES = ["humidity_merged", "humidity_sq", "hour_sin", "hour_cos",
+FEATURES = ["humidity_merged", "humidity_sq", "dew_point",
+            "humidex", "temp_rolling_1h", "hour_sin", "hour_cos",
             "month", "device_code"]
 if EXTERNAL_OK:
     FEATURES += ["apparent_temp_max", "apparent_temp_min",
