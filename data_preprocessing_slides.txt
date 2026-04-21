@@ -1,0 +1,56 @@
+Slide 1: Time Parsing and Cyclical Encoding
+
+What happens:
+- The raw ISO-8601 timestamps in the `time` column are converted into pandas datetime objects with explicit UTC timezone handling using `pd.to_datetime(df["time"], utc=True)`.
+- New time-derived features are created:
+  - `hour` from `df["time"].dt.hour`
+  - `month` from `df["time"].dt.month`
+  - `day_of_week` from `df["time"].dt.dayofweek`
+- Hour-of-day is encoded cyclically with sine and cosine:
+  - `hour_sin = np.sin(2 * np.pi * hour / 24)`
+  - `hour_cos = np.cos(2 * np.pi * hour / 24)`
+- A representative `longitude` is assigned for the Victoria dataset as a spatial reference value, without introducing a variable predictive pattern.
+
+Summary:
+This slide explains how the pipeline converts timestamp strings into datetime objects and derives time-based features. It highlights the importance of cyclical encoding for hour values so that 23:00 and 00:00 remain close in feature space, avoiding a false ordinal relationship.
+
+
+Slide 2: Metadata Imputation
+
+What happens:
+- Missing values in `device_name` and `device_location` are filled using the `device_id` lookup method:
+  - Build mappings from `device_id` to known `device_name` and `device_location` using only rows where those values are present.
+  - For rows with missing metadata, fill them by mapping the corresponding `device_id` to the stored value.
+- The pipeline reports how many missing device metadata values remain after this imputation.
+
+Summary:
+This slide shows how the preprocessing step recovers missing device metadata by reusing information from the same sensor ID.
+
+
+Slide 3: Outlier Handling
+
+What happens:
+- Temperature outliers are capped using the IQR upper fence:
+  - Compute Q1 and Q3 for `temperature_merged`.
+  - Compute IQR = Q3 - Q1 and upper fence = Q3 + 1.5 * IQR.
+  - Clip `temperature_merged` values above that threshold to the upper fence.
+
+Summary:
+This slide explains how extreme temperature values are reduced using robust IQR-based capping.
+
+
+Slide 4: Advanced Feature Engineering and Encoding
+
+What happens:
+- New derived features are created to capture moisture, comfort, and stable temperature trends:
+  - `dew_point` is derived from `temperature_merged` and `humidity_merged` to represent the temperature at which air becomes saturated.
+  - `humidex` is computed from `temperature_merged` and `dew_point` as a human comfort index.
+  - `temp_rolling_1h` is a 1-hour rolling average of `temperature_merged` grouped by `device_id` to smooth sensor noise.
+- Existing engineered features remain:
+  - `humidity_sq` = `humidity_merged` squared.
+  - `temp_humidity` = `temperature_merged` * `humidity_merged`.
+- The `device_id` categorical feature is converted into integer codes using `pd.Categorical(df["device_id"]).codes`.
+- Constant spatial metadata such as `longitude` is kept for context and not used as a predictive feature.
+
+Summary:
+This slide explains the production-grade feature extraction additions: moisture content via dew point, comfort level via humidex, and a noise-reduced temperature trend via a 1-hour rolling average. It also confirms that categorical device identifiers are encoded for modeling while constant spatial metadata is kept separate from the core predictors.
