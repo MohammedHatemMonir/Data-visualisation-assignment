@@ -54,3 +54,44 @@ What happens:
 
 Summary:
 This slide explains the production-grade feature extraction additions: moisture content via dew point, comfort level via humidex, and a noise-reduced temperature trend via a 1-hour rolling average. It also confirms that categorical device identifiers are encoded for modeling while constant spatial metadata is kept separate from the core predictors.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Target of the project: temperature_merged
+
+
+Inputs:
+
+humidity_merged
+humidity_sq (humidity_merged squared)
+dew_point
+humidex
+temp_rolling_1h
+hour_sin
+hour_cos
+month
+device_code
+
+(Optional)
+apparent_temp_max
+apparent_temp_min
+wind_speed_max
+precipitation
