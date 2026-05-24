@@ -36,9 +36,9 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 from scipy import stats
-import openmeteo_requests
-import requests_cache
-from retry_requests import retry
+
+# API packages imported conditionally inside Step 3 to avoid crashing
+# when the optional packages are not installed.
 
 # Reproducibility
 RANDOM_STATE = 42
@@ -210,6 +210,10 @@ start_date = df["time"].dt.date.min().isoformat()
 end_date   = df["time"].dt.date.max().isoformat()
 
 try:
+    import openmeteo_requests
+    import requests_cache
+    from retry_requests import retry
+
     # Setup Open-Meteo API client with cache and retry on errors.
     cache_session = requests_cache.CachedSession(".cache", expire_after=3600)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
@@ -262,11 +266,11 @@ try:
 except Exception as e:
     EXTERNAL_OK = False
     print(f"  API unavailable ({e}). Falling back to synthetic proxy features.")
-    # Synthetic fallback derived from existing data (avoids crashing pipeline)
-    df["apparent_temp_max"] = df["temperature_merged"].rolling(48, min_periods=1).max()
-    df["apparent_temp_min"] = df["temperature_merged"].rolling(48, min_periods=1).min()
-    df["wind_speed_max"]    = np.random.uniform(5, 25, size=len(df))   # placeholder
-    df["precipitation"]     = 0.0
+    # Synthetic proxy: wind inversely related to humidity (deterministic, no target leakage).
+    # apparent_temp features are NOT created in fallback mode because any rolling proxy
+    # derived from temperature_merged would constitute data leakage for regression.
+    df["wind_speed_max"] = 5 + 15 * (1 - df["humidity_merged"] / 100)
+    df["precipitation"]  = 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -396,6 +400,8 @@ FEATURES = ["humidity_merged", "humidity_sq", "dew_point",
 if EXTERNAL_OK:
     FEATURES += ["apparent_temp_max", "apparent_temp_min",
                  "wind_speed_max", "precipitation"]
+else:
+    FEATURES += ["wind_speed_max", "precipitation"]
 
 TARGET = "temperature_merged"
 
